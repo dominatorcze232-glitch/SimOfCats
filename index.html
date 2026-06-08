@@ -34,7 +34,7 @@
             font-weight: bold;
         }
         canvas {
-            background: #70c5ce; /* Obloha */
+            background: #70c5ce;
             border: 4px solid #333;
             display: block;
         }
@@ -88,9 +88,9 @@
     <h1>Battle Cats Mini Simulator</h1>
     
     <div id="ui-top">
+        <div class="stat" id="enemy-base-hp">Nepřátelská základna: 1000 HP</div>
         <div class="stat" id="money-display">Peníze: 0 XP</div>
         <div class="stat" id="cat-base-hp">Moje základna: 1000 HP</div>
-        <div class="stat" id="enemy-base-hp">Nepřátelská základna: 1000 HP</div>
     </div>
 
     <canvas id="gameCanvas" width="800" height="300"></canvas>
@@ -106,11 +106,18 @@
         </button>
     </div>
 
-    <div id="game-over" id="game-over-text">VÍTĚZSTVÍ!</div>
+    <div id="game-over">VÍTĚZSTVÍ!</div>
 
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
+
+        // Načtení obrázků pro kočky
+        const imgCatNormal = new Image();
+        imgCatNormal.src = 'cat.png'; // Zde se použije tvůj soubor "cat" z Github složky
+
+        const imgCatTank = new Image();
+        imgCatTank.src = 'tank.webp'; // Zde se použije tvůj soubor "tank.webp" z Github složky
 
         // Herní stav
         let gameActive = true;
@@ -119,25 +126,24 @@
         let catBaseHp = 1000;
         let enemyBaseHp = 1000;
 
-        const catBaseX = 50;
-        const enemyBaseX = 750;
+        // PROHOZENO: Naše základna je vpravo (750), nepřítel vlevo (50)
+        const catBaseX = 750;
+        const enemyBaseX = 50;
         const groundY = 250;
 
         let allies = [];
         let enemies = [];
 
-        // Časovače pro nepřátele
         let enemySpawnTimer = 0;
-        let enemySpawnInterval = 180; // Každé ~3 sekundy
+        let enemySpawnInterval = 180; 
 
-        // Typy jednotek
+        // Typy jednotek (naše kočky mají teď zápornou rychlost, protože jdou doleva)
         const unitTypes = {
-            cat_normal: { hp: 100, dmg: 15, speed: 1.5, size: 20, color: '#ffffff', cost: 50 },
-            cat_tank:   { hp: 300, dmg: 5,  speed: 0.8, size: 30, color: '#bdc3c7', cost: 150 },
-            doge:       { hp: 80,  dmg: 10, speed: 1.2, size: 20, color: '#f39c12' }
+            cat_normal: { hp: 100, dmg: 15, speed: -1.5, size: 30, img: imgCatNormal, cost: 50 },
+            cat_tank:   { hp: 300, dmg: 5,  speed: -0.8, size: 40, img: imgCatTank, cost: 150 },
+            doge:       { hp: 80,  dmg: 10, speed: 1.2,  size: 25, color: '#f39c12' } // Pes zůstává jako čtverec
         };
 
-        // Třída pro jednotky
         class Unit {
             constructor(type, x, isAlly) {
                 this.type = type;
@@ -148,20 +154,25 @@
                 this.hp = stats.hp;
                 this.maxHp = stats.hp;
                 this.dmg = stats.dmg;
-                this.speed = stats.speed * (isAlly ? 1 : -1);
+                this.speed = stats.speed;
                 this.size = stats.size;
                 this.color = stats.color;
+                this.img = stats.img;
                 
                 this.y = groundY - this.size;
                 this.attackCooldown = 0;
             }
 
             draw() {
-                // Kreslení těla
-                ctx.fillStyle = this.color;
-                ctx.fillRect(this.x - this.size/2, this.y, this.size, this.size);
-                ctx.strokeStyle = '#000';
-                ctx.strokeRect(this.x - this.size/2, this.y, this.size, this.size);
+                // Pokud má jednotka obrázek, vykreslí se obrázek, jinak barevný čtverec
+                if (this.img) {
+                    ctx.drawImage(this.img, this.x - this.size/2, this.y, this.size, this.size);
+                } else {
+                    ctx.fillStyle = this.color;
+                    ctx.fillRect(this.x - this.size/2, this.y, this.size, this.size);
+                    ctx.strokeStyle = '#000';
+                    ctx.strokeRect(this.x - this.size/2, this.y, this.size, this.size);
+                }
 
                 // Životy (Healthbar)
                 if (this.hp < this.maxHp) {
@@ -175,32 +186,31 @@
             update() {
                 if (this.attackCooldown > 0) this.attackCooldown--;
 
-                // Detekce kolize s nepřáteli nebo základnou
                 let canMove = true;
 
                 if (this.isAlly) {
-                    // Kontrola kolize s nepřátelskou základnou
-                    if (this.x + this.size/2 >= enemyBaseX - 30) {
+                    // Kočka jde doleva -> kontrola nepřátelské základny vlevo
+                    if (this.x - this.size/2 <= enemyBaseX + 30) {
                         canMove = false;
-                        this.attack(null, true); // Útok na věž
+                        this.attack(null, true);
                     }
-                    // Kontrola kolize s nepřátelskými jednotkami
+                    // Kontrola kolize s nepřáteli
                     for (let enemy of enemies) {
-                        if (this.x + this.size/2 >= enemy.x - enemy.size/2 && this.x < enemy.x) {
+                        if (this.x - this.size/2 <= enemy.x + enemy.size/2 && this.x > enemy.x) {
                             canMove = false;
                             this.attack(enemy, false);
                             break;
                         }
                     }
                 } else {
-                    // Kontrola kolize s mojí základnou
-                    if (this.x - this.size/2 <= catBaseX + 30) {
+                    // Nepřítel jde doprava -> kontrola naší základny vpravo
+                    if (this.x + this.size/2 >= catBaseX - 30) {
                         canMove = false;
                         this.attack(null, true);
                     }
-                    // Kontrola kolize s mými jednotkami
+                    // Kontrola kolize s kočkami
                     for (let ally of allies) {
-                        if (this.x - this.size/2 <= ally.x + ally.size/2 && this.x > ally.x) {
+                        if (this.x + this.size/2 >= ally.x - ally.size/2 && this.x < ally.x) {
                             canMove = false;
                             this.attack(ally, false);
                             break;
@@ -221,36 +231,31 @@
                     } else if (target) {
                         target.hp -= this.dmg;
                     }
-                    this.attackCooldown = 45; // Prodleva mezi útoky
+                    this.attackCooldown = 45;
                 }
             }
         }
 
-        // Spawnutí kočky hráče
         function spawnCat(type) {
             let key = 'cat_' + type;
             let cost = unitTypes[key].cost;
             if (money >= cost && gameActive) {
                 money -= cost;
-                allies.push(new Unit(key, catBaseX + 30, true));
+                // Kočky se rodí u pravé základny
+                allies.push(new Unit(key, catBaseX - 30, true));
             }
         }
 
-        // Hlavní herní smyčka
         function gameLoop() {
             if (!gameActive) return;
-
             updateState();
             render();
-
             requestAnimationFrame(gameLoop);
         }
 
         function updateState() {
-            // Pasivní příjem peněz
             if (money < maxMoney) money += 0.5;
 
-            // Aktualizace tlačítek UI
             document.getElementById('money-display').innerText = `Peníze: ${Math.floor(money)} / ${maxMoney} XP`;
             document.getElementById('cat-base-hp').innerText = `Moje základna: ${Math.max(0, catBaseHp)} HP`;
             document.getElementById('enemy-base-hp').innerText = `Nepřátelská základna: ${Math.max(0, enemyBaseHp)} HP`;
@@ -258,24 +263,20 @@
             document.getElementById('spawn-cat-1').disabled = money < unitTypes.cat_normal.cost;
             document.getElementById('spawn-cat-2').disabled = money < unitTypes.cat_tank.cost;
 
-            // Spawnování nepřátel (Doge)
+            // Nepřátelé se rodí u levé základny
             enemySpawnTimer++;
             if (enemySpawnTimer >= enemySpawnInterval) {
-                enemies.push(new Unit('doge', enemyBaseX - 30, false));
+                enemies.push(new Unit('doge', enemyBaseX + 30, false));
                 enemySpawnTimer = 0;
-                // Postupné zrychlování spawnu pro vyšší obtížnost
                 if (enemySpawnInterval > 60) enemySpawnInterval -= 5;
             }
 
-            // Update jednotek
             allies.forEach(all => all.update());
             enemies.forEach(ene => ene.update());
 
-            // Odstranění mrtvých jednotek
             allies = allies.filter(all => all.hp > 0);
             enemies = enemies.filter(ene => ene.hp > 0);
 
-            // Kontrola konce hry
             if (enemyBaseHp <= 0) {
                 endGame("VÍTĚZSTVÍ!");
             } else if (catBaseHp <= 0) {
@@ -284,20 +285,19 @@
         }
 
         function render() {
-            // Vyčištění canvasu
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
             // Vykreslení země
-            ctx.fillStyle = '#8e44ad'; // Fialová země jako v některých levelech
+            ctx.fillStyle = '#8e44ad';
             ctx.fillRect(0, groundY, canvas.width, canvas.height - groundY);
 
-            // Moje základna (Modrá věž)
-            ctx.fillStyle = '#3498db';
-            ctx.fillRect(catBaseX - 25, groundY - 100, 50, 100);
-            
-            // Nepřátelská základna (Červená věž)
+            // Nepřátelská základna vlevo (Červená věž)
             ctx.fillStyle = '#e74c3c';
             ctx.fillRect(enemyBaseX - 25, groundY - 100, 50, 100);
+
+            // Moje základna vpravo (Modrá věž)
+            ctx.fillStyle = '#3498db';
+            ctx.fillRect(catBaseX - 25, groundY - 100, 50, 100);
 
             // Vykreslení jednotek
             allies.forEach(all => all.draw());
@@ -312,7 +312,6 @@
             overDiv.style.color = text === "VÍTĚZSTVÍ!" ? "#2ecc71" : "#e74c3c";
         }
 
-        // Spuštění hry
         gameLoop();
     </script>
 </body>
